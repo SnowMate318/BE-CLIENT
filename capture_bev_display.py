@@ -9,6 +9,7 @@ import time
 
 from bev_callback import CallbackError, CallbackReceiver
 from capture_and_send import (
+    CAMERA_FIELD_NAME,
     CaptureError,
     IMAGE_HEIGHT,
     IMAGE_WIDTH,
@@ -106,6 +107,8 @@ def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> 
         parser.error("--callback-port는 0에서 65535 사이여야 합니다.")
     if not args.callback_field or not args.field_name:
         parser.error("업로드 필드명은 비워 둘 수 없습니다.")
+    if args.field_name == CAMERA_FIELD_NAME:
+        parser.error(f"--field-name은 {CAMERA_FIELD_NAME!r}일 수 없습니다.")
     if args.callback_timeout <= 0 or args.upload_timeout <= 0:
         parser.error("timeout은 0보다 커야 합니다.")
     if args.warmup_frames < 0:

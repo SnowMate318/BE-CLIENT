@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
 from camera_frame import (
@@ -28,6 +29,8 @@ except ImportError:  # requirements.txt가 설치되지 않은 경우에도 명�
 
 EXIT_CAPTURE_ERROR = 3
 EXIT_SEND_ERROR = 4
+CAMERA_FIELD_NAME = "camera"
+CAMERA_JSON_PATH = Path(__file__).resolve().with_name("camera.json")
 
 
 class CaptureError(RuntimeError):
@@ -36,6 +39,14 @@ class CaptureError(RuntimeError):
 
 class SendError(RuntimeError):
     """HTTP 전송 실패."""
+
+
+def read_camera_json() -> bytes:
+    """capture_and_send.py와 같은 디렉터리의 camera.json을 읽는다."""
+    try:
+        return CAMERA_JSON_PATH.read_bytes()
+    except OSError as exc:
+        raise SendError(f"camera.json을 읽을 수 없습니다: {CAMERA_JSON_PATH}: {exc}") from exc
 
 
 def capture_jpeg(
@@ -95,12 +106,20 @@ def send_image(
     field_name: str = "image",
     timeout: float = 10.0,
     form_data: Optional[Mapping[str, str]] = None,
+    camera_json: Optional[bytes] = None,
 ) -> int:
-    """JPEG를 multipart/form-data로 전송하고 HTTP 상태 코드를 반환한다."""
+    """JPEG와 camera.json을 multipart로 전송하고 HTTP 상태 코드를 반환한다."""
     if requests is None:
         raise SendError("requests가 설치되지 않았습니다.")
+    if field_name == CAMERA_FIELD_NAME:
+        raise SendError(f"이미지 필드명은 {CAMERA_FIELD_NAME!r}일 수 없습니다.")
+    if camera_json is None:
+        camera_json = read_camera_json()
 
-    files = {field_name: ("capture.jpg", jpeg, "image/jpeg")}
+    files = {
+        field_name: ("capture.jpg", jpeg, "image/jpeg"),
+        CAMERA_FIELD_NAME: ("camera.json", camera_json, "application/json"),
+    }
     request_kwargs = {
         "files": files,
         "timeout": timeout,
@@ -153,6 +172,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--jpeg-quality는 1에서 100 사이여야 합니다.")
     if not args.field_name:
         parser.error("--field-name은 비워 둘 수 없습니다.")
+    if args.field_name == CAMERA_FIELD_NAME:
+        parser.error(f"--field-name은 {CAMERA_FIELD_NAME!r}일 수 없습니다.")
     if args.timeout <= 0:
         parser.error("--timeout은 0보다 커야 합니다.")
 

@@ -137,10 +137,13 @@ class CallbackReceiverTests(unittest.TestCase):
                     b"jpeg",
                     f"http://127.0.0.1:{upload_server.server_port}/upload",
                     form_data={"callback_url": callback_url},
+                    camera_json=b'{"model":"fisheye"}',
                 )
                 self.assertEqual(status, 202)
                 self.assertEqual(callback_status, [204])
                 self.assertIn(callback_url.encode(), upload_server.received_body)
+                self.assertIn(b'filename="camera.json"', upload_server.received_body)
+                self.assertIn(b'{"model":"fisheye"}', upload_server.received_body)
                 self.assertEqual(receiver.wait(1), PNG)
             finally:
                 upload_server.shutdown()

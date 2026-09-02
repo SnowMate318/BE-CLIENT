@@ -125,11 +125,12 @@ Pi의 `localhost`는 Pi 자신을 가리킵니다. `--url`에는 PC의 내부망
 - 메서드: `POST`
 - 형식: `multipart/form-data`
 - `image`: `capture.jpg`, `image/jpeg`, 1024×1024(1920×1080 중앙 crop 후 축소)
+- `camera`: 클라이언트의 `capture_and_send.py`와 같은 디렉터리에 있는 `camera.json`, `application/json`
 - `callback_url`: Pi가 생성한 일회용 callback URL
 - 성공 조건: HTTP 2xx
 - 리다이렉트: 허용하지 않음
 
-서버의 필드명이 다르면 `--field-name`과 `--callback-field`로 변경할 수 있습니다.
+이미지와 callback 필드명이 다르면 `--field-name`과 `--callback-field`로 변경할 수 있습니다. `camera.json` 파일 필드명은 `camera`로 고정되어 있습니다. 파일이 없거나 읽을 수 없으면 클라이언트는 HTTP 요청을 보내지 않고 전송 오류로 종료합니다.
 
 ### 서버 callback
 

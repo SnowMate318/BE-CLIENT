@@ -1,6 +1,8 @@
 import io
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -89,12 +91,20 @@ class SendImageTests(unittest.TestCase):
                 "http://192.168.0.10:8000/upload",
                 field_name="photo",
                 timeout=3.5,
+                camera_json=b'{"model":"fisheye"}',
             )
 
         self.assertEqual(status, 201)
         requests_mock.post.assert_called_once_with(
             "http://192.168.0.10:8000/upload",
-            files={"photo": ("capture.jpg", b"jpeg-data", "image/jpeg")},
+            files={
+                "photo": ("capture.jpg", b"jpeg-data", "image/jpeg"),
+                "camera": (
+                    "camera.json",
+                    b'{"model":"fisheye"}',
+                    "application/json",
+                ),
+            },
             timeout=3.5,
             allow_redirects=False,
         )
@@ -110,12 +120,16 @@ class SendImageTests(unittest.TestCase):
                 b"jpeg-data",
                 "http://server/upload",
                 form_data={"callback_url": "http://pi:8765/bev/token"},
+                camera_json=b"{}",
             )
 
         self.assertEqual(status, 202)
         requests_mock.post.assert_called_once_with(
             "http://server/upload",
-            files={"image": ("capture.jpg", b"jpeg-data", "image/jpeg")},
+            files={
+                "image": ("capture.jpg", b"jpeg-data", "image/jpeg"),
+                "camera": ("camera.json", b"{}", "application/json"),
+            },
             timeout=10.0,
             allow_redirects=False,
             data={"callback_url": "http://pi:8765/bev/token"},
@@ -135,7 +149,9 @@ class SendImageTests(unittest.TestCase):
                 capture_and_send.SendError, "connection refused"
             ):
                 capture_and_send.send_image(
-                    b"jpeg-data", "http://192.168.0.10:8000/upload"
+                    b"jpeg-data",
+                    "http://192.168.0.10:8000/upload",
+                    camera_json=b"{}",
                 )
 
     def test_rejects_non_2xx_response_that_raise_for_status_allows(self):
@@ -146,8 +162,35 @@ class SendImageTests(unittest.TestCase):
         with patch.object(capture_and_send, "requests", requests_mock):
             with self.assertRaisesRegex(capture_and_send.SendError, "HTTP 302"):
                 capture_and_send.send_image(
-                    b"jpeg-data", "http://192.168.0.10:8000/upload"
+                    b"jpeg-data",
+                    "http://192.168.0.10:8000/upload",
+                    camera_json=b"{}",
                 )
+
+    def test_reads_camera_json_next_to_capture_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "camera.json"
+            path.write_bytes(b'{"width":1024}')
+            with patch.object(capture_and_send, "CAMERA_JSON_PATH", path):
+                self.assertEqual(capture_and_send.read_camera_json(), b'{"width":1024}')
+
+        self.assertEqual(capture_and_send.CAMERA_JSON_PATH.name, "camera.json")
+        self.assertEqual(
+            capture_and_send.CAMERA_JSON_PATH.parent,
+            Path(capture_and_send.__file__).resolve().parent,
+        )
+
+    def test_missing_camera_json_stops_before_http_request(self):
+        requests_mock = MagicMock()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            capture_and_send,
+            "CAMERA_JSON_PATH",
+            Path(directory) / "camera.json",
+        ), patch.object(capture_and_send, "requests", requests_mock):
+            with self.assertRaisesRegex(capture_and_send.SendError, "camera.json"):
+                capture_and_send.send_image(b"jpeg-data", "http://server/upload")
+
+        requests_mock.post.assert_not_called()
 
 
 class MainTests(unittest.TestCase):
