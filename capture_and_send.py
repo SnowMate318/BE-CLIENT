@@ -6,6 +6,15 @@ import argparse
 import sys
 from typing import Mapping, Optional, Sequence
 
+from camera_frame import (
+    FramePreparationError,
+    IMAGE_HEIGHT,
+    IMAGE_WIDTH,
+    SOURCE_HEIGHT,
+    SOURCE_WIDTH,
+    prepare_frame,
+)
+
 try:
     import cv2
 except ImportError:  # requirements.txt가 설치되지 않은 경우에도 명확한 CLI 오류를 낸다.
@@ -19,8 +28,6 @@ except ImportError:  # requirements.txt가 설치되지 않은 경우에도 명�
 
 EXIT_CAPTURE_ERROR = 3
 EXIT_SEND_ERROR = 4
-IMAGE_WIDTH = 1024
-IMAGE_HEIGHT = 1024
 
 
 class CaptureError(RuntimeError):
@@ -38,9 +45,11 @@ def capture_jpeg(
     warmup_frames: int,
     jpeg_quality: int,
 ) -> bytes:
-    """요청한 해상도로 한 프레임을 촬영해 JPEG bytes를 반환한다."""
+    """1920x1080을 촬영해 중앙 crop한 1024x1024 JPEG를 반환한다."""
     if cv2 is None:
         raise CaptureError("OpenCV가 설치되지 않았습니다.")
+    if (width, height) != (IMAGE_WIDTH, IMAGE_HEIGHT):
+        raise CaptureError("출력 해상도는 1024x1024로 고정되어 있습니다.")
 
     try:
         camera = cv2.VideoCapture(camera_index)
@@ -51,8 +60,8 @@ def capture_jpeg(
         if not camera.isOpened():
             raise CaptureError(f"카메라 {camera_index}를 열 수 없습니다.")
 
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        camera.set(cv2.CAP_PROP_FRAME_WIDTH, SOURCE_WIDTH)
+        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, SOURCE_HEIGHT)
 
         for _ in range(warmup_frames):
             camera.read()
@@ -61,12 +70,10 @@ def capture_jpeg(
         if not ok or frame is None:
             raise CaptureError("카메라에서 프레임을 읽지 못했습니다.")
 
-        actual_height, actual_width = frame.shape[:2]
-        if (actual_width, actual_height) != (width, height):
-            raise CaptureError(
-                "카메라가 요청 해상도를 지원하지 않습니다: "
-                f"요청 {width}x{height}, 실제 {actual_width}x{actual_height}"
-            )
+        try:
+            frame = prepare_frame(cv2, frame)
+        except FramePreparationError as exc:
+            raise CaptureError(str(exc)) from exc
 
         encoded_ok, encoded = cv2.imencode(
             ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
@@ -118,10 +125,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--url", required=True, help="수신 서버 URL")
     parser.add_argument("--camera-index", type=int, default=0, help="USB 카메라 인덱스")
     parser.add_argument(
-        "--width", type=int, default=IMAGE_WIDTH, help="촬영 가로 해상도(고정: 1024)"
+        "--width", type=int, default=IMAGE_WIDTH, help="전송 이미지 가로 해상도(고정: 1024)"
     )
     parser.add_argument(
-        "--height", type=int, default=IMAGE_HEIGHT, help="촬영 세로 해상도(고정: 1024)"
+        "--height", type=int, default=IMAGE_HEIGHT, help="전송 이미지 세로 해상도(고정: 1024)"
     )
     parser.add_argument(
         "--warmup-frames", type=int, default=5, help="촬영 전 버릴 프레임 수"
@@ -139,7 +146,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if (args.width, args.height) != (IMAGE_WIDTH, IMAGE_HEIGHT):
-        parser.error("촬영 해상도는 1024x1024로 고정되어 있습니다.")
+        parser.error("전송 이미지 해상도는 1024x1024로 고정되어 있습니다.")
     if args.warmup_frames < 0:
         parser.error("--warmup-frames는 0 이상이어야 합니다.")
     if not 1 <= args.jpeg_quality <= 100:

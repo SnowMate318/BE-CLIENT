@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import capture_and_send
+from camera_frame import FramePreparationError
 
 
 class CaptureJpegTests(unittest.TestCase):
@@ -12,8 +13,10 @@ class CaptureJpegTests(unittest.TestCase):
         self.camera = MagicMock()
         self.camera.isOpened.return_value = True
         self.frame = MagicMock()
-        self.frame.shape = (480, 640, 3)
+        self.frame.shape = (1080, 1920, 3)
         self.camera.read.return_value = (True, self.frame)
+        self.prepared = MagicMock()
+        self.prepared.shape = (1024, 1024, 3)
 
         self.encoded = MagicMock()
         self.encoded.tobytes.return_value = b"jpeg-data"
@@ -24,17 +27,20 @@ class CaptureJpegTests(unittest.TestCase):
         self.cv2.VideoCapture.return_value = self.camera
         self.cv2.imencode.return_value = (True, self.encoded)
 
-    def test_captures_requested_resolution_after_warmup_and_encodes_jpeg(self):
-        with patch.object(capture_and_send, "cv2", self.cv2):
-            result = capture_and_send.capture_jpeg(2, 640, 480, 2, 85)
+    def test_captures_full_hd_then_prepares_square_and_encodes_jpeg(self):
+        with patch.object(capture_and_send, "cv2", self.cv2), patch.object(
+            capture_and_send, "prepare_frame", return_value=self.prepared
+        ) as prepare:
+            result = capture_and_send.capture_jpeg(2, 1024, 1024, 2, 85)
 
         self.assertEqual(result, b"jpeg-data")
         self.cv2.VideoCapture.assert_called_once_with(2)
-        self.camera.set.assert_any_call(self.cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.camera.set.assert_any_call(self.cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.camera.set.assert_any_call(self.cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        self.camera.set.assert_any_call(self.cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         self.assertEqual(self.camera.read.call_count, 3)
+        prepare.assert_called_once_with(self.cv2, self.frame)
         self.cv2.imencode.assert_called_once_with(
-            ".jpg", self.frame, [self.cv2.IMWRITE_JPEG_QUALITY, 85]
+            ".jpg", self.prepared, [self.cv2.IMWRITE_JPEG_QUALITY, 85]
         )
         self.camera.release.assert_called_once_with()
 
@@ -43,21 +49,32 @@ class CaptureJpegTests(unittest.TestCase):
 
         with patch.object(capture_and_send, "cv2", self.cv2):
             with self.assertRaisesRegex(capture_and_send.CaptureError, "프레임"):
-                capture_and_send.capture_jpeg(0, 640, 480, 0, 90)
+                capture_and_send.capture_jpeg(0, 1024, 1024, 0, 90)
 
         self.camera.release.assert_called_once_with()
 
-    def test_rejects_resolution_different_from_request(self):
-        self.frame.shape = (720, 1280, 3)
-
-        with patch.object(capture_and_send, "cv2", self.cv2):
+    def test_rejects_camera_resolution_other_than_full_hd(self):
+        error = FramePreparationError(
+            "카메라가 필요한 원본 해상도를 제공하지 않습니다: "
+            "요청 1920x1080, 실제 1280x720"
+        )
+        with patch.object(capture_and_send, "cv2", self.cv2), patch.object(
+            capture_and_send, "prepare_frame", side_effect=error
+        ):
             with self.assertRaisesRegex(
-                capture_and_send.CaptureError, "요청 640x480, 실제 1280x720"
+                capture_and_send.CaptureError, "요청 1920x1080, 실제 1280x720"
             ):
-                capture_and_send.capture_jpeg(0, 640, 480, 0, 90)
+                capture_and_send.capture_jpeg(0, 1024, 1024, 0, 90)
 
         self.cv2.imencode.assert_not_called()
         self.camera.release.assert_called_once_with()
+
+    def test_rejects_output_resolution_other_than_1024_square(self):
+        with patch.object(capture_and_send, "cv2", self.cv2):
+            with self.assertRaisesRegex(capture_and_send.CaptureError, "1024x1024"):
+                capture_and_send.capture_jpeg(0, 640, 480, 0, 90)
+
+        self.cv2.VideoCapture.assert_not_called()
 
 
 class SendImageTests(unittest.TestCase):

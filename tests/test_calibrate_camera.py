@@ -73,7 +73,9 @@ class CalibrationTests(unittest.TestCase):
         calibration.validate_args(argparse.Namespace(**base))
 
         base.update(width=640)
-        with self.assertRaisesRegex(calibration.CalibrationError, "fixed at 1024x1024"):
+        with self.assertRaisesRegex(
+            calibration.CalibrationError, "image resolution is fixed at 1024x1024"
+        ):
             calibration.validate_args(argparse.Namespace(**base))
 
         base.update(width=1024, world_from_camera=[1.0] * 9)

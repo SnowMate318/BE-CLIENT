@@ -10,9 +10,15 @@ import time
 from pathlib import Path
 from typing import Iterable, NamedTuple, Optional, Sequence, Tuple
 
+from camera_frame import (
+    FramePreparationError,
+    IMAGE_HEIGHT,
+    IMAGE_WIDTH,
+    SOURCE_HEIGHT,
+    SOURCE_WIDTH,
+    prepare_frame,
+)
 
-IMAGE_WIDTH = 1024
-IMAGE_HEIGHT = 1024
 
 
 class CalibrationError(RuntimeError):
@@ -55,10 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-s", type=float, default=180.0, help="collection timeout in seconds (default: 180)")
     parser.add_argument("--scan-interval-s", type=float, default=0.2, help="seconds between checkerboard scans (default: 0.2)")
     parser.add_argument(
-        "--width", type=int, default=IMAGE_WIDTH, help="capture width (fixed: 1024)"
+        "--width", type=int, default=IMAGE_WIDTH, help="calibration image width (fixed: 1024)"
     )
     parser.add_argument(
-        "--height", type=int, default=IMAGE_HEIGHT, help="capture height (fixed: 1024)"
+        "--height", type=int, default=IMAGE_HEIGHT, help="calibration image height (fixed: 1024)"
     )
     parser.add_argument("--output", type=Path, default=Path("camera.json"), help="output JSON path (default: camera.json)")
     parser.add_argument(
@@ -90,7 +96,7 @@ def validate_args(args: argparse.Namespace) -> None:
     if not math.isfinite(args.scan_interval_s) or args.scan_interval_s < 0:
         raise CalibrationError("--scan-interval-s must be a non-negative finite number")
     if (args.width, args.height) != (IMAGE_WIDTH, IMAGE_HEIGHT):
-        raise CalibrationError("camera resolution is fixed at 1024x1024")
+        raise CalibrationError("calibration image resolution is fixed at 1024x1024")
     if (args.world_from_camera is None) != (args.camera_position_world is None):
         raise CalibrationError(
             "--world-from-camera and --camera-position-world must be supplied together"
@@ -173,8 +179,8 @@ def collect_views(cv2, args: argparse.Namespace):
     if not capture.isOpened():
         capture.release()
         raise CalibrationError(f"cannot open camera {args.camera!r}")
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, IMAGE_WIDTH)
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, IMAGE_HEIGHT)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, SOURCE_WIDTH)
+    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, SOURCE_HEIGHT)
 
     image_points, poses = [], []
     image_size: Optional[Tuple[int, int]] = None
@@ -197,12 +203,11 @@ def collect_views(cv2, args: argparse.Namespace):
             if now < next_scan:
                 continue
             next_scan = now + args.scan_interval_s
+            try:
+                frame = prepare_frame(cv2, frame)
+            except FramePreparationError as exc:
+                raise CalibrationError(str(exc)) from exc
             current_size = (int(frame.shape[1]), int(frame.shape[0]))
-            if current_size != (IMAGE_WIDTH, IMAGE_HEIGHT):
-                raise CalibrationError(
-                    f"camera provided {current_size[0]}x{current_size[1]}, not the requested "
-                    f"{IMAGE_WIDTH}x{IMAGE_HEIGHT}"
-                )
             if image_size is not None and current_size != image_size:
                 raise CalibrationError("camera resolution changed during calibration")
             image_size = current_size

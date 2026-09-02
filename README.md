@@ -1,6 +1,6 @@
 # Raspberry Pi USB 카메라 클라이언트
 
-USB fisheye 카메라를 캘리브레이션하고, 1024×1024 사진 한 장을 내부망 서버로 전송한 뒤 callback으로 받은 BEV PNG를 Raspberry Pi 디스플레이에 표시합니다.
+USB fisheye 카메라를 1920×1080으로 촬영하고, 중앙 영역을 1024×1024 입력으로 변환해 캘리브레이션 및 전송한 뒤 callback으로 받은 BEV PNG를 Raspberry Pi 디스플레이에 표시합니다.
 
 주요 프로그램은 다음과 같습니다.
 
@@ -24,7 +24,7 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-카메라가 1024×1024를 직접 지원하는지 확인합니다.
+카메라가 1920×1080을 지원하는지 확인합니다.
 
 ```bash
 v4l2-ctl --list-devices
@@ -50,7 +50,13 @@ OpenCV의 [A4 체커보드 패턴](https://github.com/opencv/opencv/blob/4.x/doc
 
 ## 3. 1024×1024 카메라 캘리브레이션
 
-캘리브레이션과 실제 촬영 해상도는 모두 1024×1024로 고정되어 있습니다. 다른 해상도는 허용하지 않으며 임의 resize/crop도 하지 않습니다.
+캘리브레이션과 실제 전송은 모두 같은 프레임 처리 과정을 사용합니다.
+
+1. USB 카메라에서 1920×1080 프레임을 촬영합니다.
+2. 좌우 420픽셀씩 제외해 중앙 1080×1080 영역을 자릅니다.
+3. OpenCV `INTER_AREA`로 1024×1024로 축소합니다.
+
+카메라가 실제로 1920×1080 프레임을 제공하지 않으면 즉시 실패합니다. `camera.json`의 intrinsic은 최종 1024×1024 이미지를 기준으로 계산되므로, 서버에 전송하는 이미지와 좌표계가 같습니다.
 
 ```bash
 python calibrate_camera.py \
@@ -118,7 +124,7 @@ Pi의 `localhost`는 Pi 자신을 가리킵니다. `--url`에는 PC의 내부망
 
 - 메서드: `POST`
 - 형식: `multipart/form-data`
-- `image`: `capture.jpg`, `image/jpeg`, 1024×1024
+- `image`: `capture.jpg`, `image/jpeg`, 1024×1024(1920×1080 중앙 crop 후 축소)
 - `callback_url`: Pi가 생성한 일회용 callback URL
 - 성공 조건: HTTP 2xx
 - 리다이렉트: 허용하지 않음
@@ -170,7 +176,7 @@ python capture_and_send.py \
   --url http://192.168.0.10:8000/upload
 ```
 
-촬영과 캘리브레이션 모두 실제 프레임이 1024×1024가 아니면 즉시 실패합니다.
+촬영과 캘리브레이션 모두 카메라 원본이 1920×1080이 아니면 즉시 실패합니다. 두 프로그램은 동일한 중앙 crop 및 축소 함수를 사용합니다.
 
 ## 8. 종료 코드와 테스트
 
@@ -184,4 +190,4 @@ python capture_and_send.py \
 python -m unittest discover -s tests -v
 ```
 
-자동 테스트는 합성 fisheye 캘리브레이션, 실제 localhost multipart/callback 왕복, 업로드 응답 전 즉시 callback, PNG 검증 및 화면 맞춤을 확인합니다. 실제 USB 카메라와 Raspberry Pi 디스플레이는 대상 장치에서 마지막으로 확인해야 합니다.
+자동 테스트는 1920×1080 중앙 crop 및 1024×1024 축소, 합성 fisheye 캘리브레이션, 실제 localhost multipart/callback 왕복, 업로드 응답 전 즉시 callback, PNG 검증 및 화면 맞춤을 확인합니다. 실제 USB 카메라와 Raspberry Pi 디스플레이는 대상 장치에서 마지막으로 확인해야 합니다.
