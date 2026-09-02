@@ -80,6 +80,27 @@ class CaptureJpegTests(unittest.TestCase):
 
 
 class SendImageTests(unittest.TestCase):
+    def test_automatically_attaches_camera_json_from_module_directory(self):
+        response = MagicMock(status_code=200)
+        requests_mock = MagicMock()
+        requests_mock.post.return_value = response
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "camera.json"
+            path.write_bytes(b'{"width":1024}')
+            with patch.object(capture_and_send, "CAMERA_JSON_PATH", path), patch.object(
+                capture_and_send, "requests", requests_mock
+            ), redirect_stdout(io.StringIO()) as stdout:
+                capture_and_send.send_image(b"jpeg-data", "http://server/upload")
+
+        files = requests_mock.post.call_args.kwargs["files"]
+        self.assertEqual(
+            files["camera"],
+            ("camera.json", b'{"width":1024}', "application/json"),
+        )
+        self.assertIn(str(path), stdout.getvalue())
+        self.assertIn("14 bytes", stdout.getvalue())
+
     def test_sends_jpeg_as_configured_multipart_field(self):
         response = MagicMock(status_code=201)
         requests_mock = MagicMock()

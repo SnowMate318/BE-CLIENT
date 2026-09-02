@@ -115,6 +115,7 @@ def send_image(
         raise SendError(f"이미지 필드명은 {CAMERA_FIELD_NAME!r}일 수 없습니다.")
     if camera_json is None:
         camera_json = read_camera_json()
+        print(f"camera.json 첨부: {CAMERA_JSON_PATH} ({len(camera_json)} bytes)")
 
     files = {
         field_name: ("capture.jpg", jpeg, "image/jpeg"),

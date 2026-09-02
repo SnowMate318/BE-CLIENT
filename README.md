@@ -100,12 +100,12 @@ python calibrate_camera.py \
 
 ## 4. 촬영 → callback → BEV 표시
 
-예를 들어 PC가 `192.168.0.10`, Raspberry Pi가 `192.168.0.20`이라면 다음처럼 실행합니다.
+현재 내부망에서 PC가 `192.168.0.10`, Raspberry Pi가 `192.168.0.180`이라면 다음처럼 실행합니다.
 
 ```bash
 python capture_bev_display.py \
   --url http://192.168.0.10:8000/upload \
-  --callback-host 192.168.0.20 \
+  --callback-host 192.168.0.180 \
   --callback-port 8765 \
   --camera-index 0
 ```
@@ -130,7 +130,7 @@ Pi의 `localhost`는 Pi 자신을 가리킵니다. `--url`에는 PC의 내부망
 - 성공 조건: HTTP 2xx
 - 리다이렉트: 허용하지 않음
 
-이미지와 callback 필드명이 다르면 `--field-name`과 `--callback-field`로 변경할 수 있습니다. `camera.json` 파일 필드명은 `camera`로 고정되어 있습니다. 파일이 없거나 읽을 수 없으면 클라이언트는 HTTP 요청을 보내지 않고 전송 오류로 종료합니다.
+이미지와 callback 필드명이 다르면 `--field-name`과 `--callback-field`로 변경할 수 있습니다. `camera.json` 파일 필드명은 `camera`로 고정되어 있습니다. 파일이 없거나 읽을 수 없으면 클라이언트는 HTTP 요청을 보내지 않고 전송 오류로 종료합니다. 전송 직전에는 실제 파일 경로와 바이트 수가 `camera.json 첨부: ...` 형식으로 출력됩니다.
 
 ### 서버 callback
 

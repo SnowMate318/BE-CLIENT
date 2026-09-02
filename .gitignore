@@ -1,6 +1,5 @@
 /.venv/
 /venv/
-/camera.json
 
 __pycache__/
 *.py[cod]
